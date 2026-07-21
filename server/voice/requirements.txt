@@ -1,0 +1,6 @@
+# Optional local voice cloning model dependencies.
+# Install only on machines where you have permission to clone the speaker's voice
+# and enough disk/GPU/CPU resources to run XTTS.
+TTS>=0.22.0
+torch>=2.1.0
+torchaudio>=2.1.0

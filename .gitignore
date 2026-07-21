@@ -1,0 +1,15 @@
+node_modules
+.DS_Store
+.env
+.env.*
+!.env.example
+coverage
+dist
+.vite
+*.local
+
+# Local voice model/runtime artifacts
+.venv-voice
+server/storage
+server/tmp
+*.wav.tmp
