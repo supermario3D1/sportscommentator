@@ -17,32 +17,34 @@ Primary profile: Ryzen 7 7840U, Radeon 780M iGPU, 32 GB RAM, 15–20 GB free, Fe
 
 A standard `onnxruntime` wheel is CPU-only. The app uses `ROCMExecutionProvider`, `VulkanExecutionProvider`, or `CUDAExecutionProvider` only when the installed ONNX Runtime build actually exposes it; a driver alone is not treated as acceleration. Provider priority is ROCm → Vulkan → CUDA → CPU. Radeon 780M ROCm support varies by OS/driver, so CPU is the safe default.
 
-## One-click setup
+## Easy installation
 
-### Fedora 44 / Ubuntu
+See **[INSTALL.md](INSTALL.md)** for beginner-friendly, step-by-step instructions, ZIP-download instructions, manual recovery, updating, and troubleshooting for every supported operating system.
+
+### Supported operating systems
+
+- Fedora Linux 40+, including Fedora 44
+- Ubuntu 22.04+
+- Debian 12+
+- Linux Mint 21+ and current Ubuntu derivatives
+- Windows 10/11 64-bit
+- Other x86-64 Linux distributions with manual dependency installation
+
+No dedicated GPU, CUDA, ROCm, or Vulkan setup is required. CPU mode is the default.
+
+### Fastest first launch
+
+**Fedora, Ubuntu, Debian, or Linux Mint:**
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/supermario3D1/sportscommentator.git
 cd sportscommentator
-chmod +x setup.sh run.sh
-./setup.sh
-./run.sh
+bash run.sh
 ```
 
-`setup.sh` installs FFmpeg, creates `.venv`, installs CPU-only PyTorch from the PyTorch CPU index, installs Ollama, exports dynamic YOLOv8n ONNX, downloads all four UI Piper voices, pulls `phi3:mini` and `tinyllama`, verifies files, and prints a hardware report.
+**Windows 10/11:** download the repository ZIP, extract it, and double-click **`run.bat`**.
 
-Fedora uses the distribution's `ffmpeg-free` package. If a source codec is unavailable there, install full FFmpeg from your preferred Fedora multimedia repository.
-
-### Windows 10/11
-
-Install Python 3.10+ and ensure the `python` command works, then double-click `setup.bat` or run:
-
-```bat
-setup.bat
-run.bat
-```
-
-The script uses `winget` for FFmpeg and Ollama when they are absent. Restart the terminal after `winget` changes PATH.
+The launchers detect a first run and automatically start setup. Setup installs or checks Python, FFmpeg, and Ollama; creates `.venv`; installs CPU-only dependencies; exports YOLOv8n ONNX; downloads four Piper voices; pulls Phi-3 Mini and TinyLlama; verifies model files; and starts the application. The first run downloads several gigabytes and can take 10–60 minutes. Running the same launcher again safely continues an interrupted setup.
 
 ### Models only / interrupted download
 
@@ -195,8 +197,9 @@ uploads/                 persisted UI inputs
 outputs/                 final MP4 files
 models/                  YOLO/Piper/OpenVoice files (Ollama uses its own store)
 install_models.py        verified model installer
+INSTALL.md               step-by-step setup for every supported OS
 setup.sh / setup.bat     one-click installers
-run.sh / run.bat         launchers
+run.sh / run.bat         first-run setup and later launchers
 ```
 
 All media, models, outputs, and checkpoints are git-ignored; directory markers are retained.
