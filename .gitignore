@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Downloaded models (keep directory markers)
+models/*
+!models/.gitkeep
+!models/piper/
+models/piper/*
+!models/piper/.gitkeep
+
+# User media and generated output
+uploads/*
+!uploads/.gitkeep
+outputs/*
+!outputs/.gitkeep
+
+# Checkpoints and generated work
+checkpoints/*
+!checkpoints/.gitkeep
+temp/*
+!temp/.gitkeep
+!temp/frames/
+!temp/detections/
+!temp/tracks/
+!temp/commentary/
+!temp/audio_clips/
+!temp/audio_chunks/
+temp/frames/*
+!temp/frames/.gitkeep
+temp/detections/*
+!temp/detections/.gitkeep
+temp/tracks/*
+!temp/tracks/.gitkeep
+temp/commentary/*
+!temp/commentary/.gitkeep
+temp/audio_clips/*
+!temp/audio_clips/.gitkeep
+temp/audio_chunks/*
+!temp/audio_chunks/.gitkeep
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

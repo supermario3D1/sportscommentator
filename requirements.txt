@@ -1,0 +1,28 @@
+# Python 3.10+ is required. setup.sh verifies it before installing.
+# The extra index lets pip select CPU-only PyTorch wheels instead of CUDA builds.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Model export (PyTorch is used only by the one-time YOLO exporter/OpenVoice)
+torch>=2.0
+torchvision>=0.15
+ultralytics>=8.0,<9
+
+# Vision/runtime
+opencv-python-headless>=4.8,<5
+onnxruntime>=1.16,<2
+numpy>=1.24,<3
+supervision>=0.17,<1
+
+# Local LLM and CPU TTS
+ollama>=0.1,<1
+piper-tts>=1.2,<2
+
+# Audio/UI
+pydub>=0.25,<1
+audioop-lts>=0.2.1; python_version >= "3.13"
+ffmpeg-python>=0.2,<1
+gradio>=4.44,<6
+
+# Utilities
+psutil>=5.9,<8
+tqdm>=4.65,<5
