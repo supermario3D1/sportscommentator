@@ -174,12 +174,13 @@ def test_open_https_reports_guidance_when_every_source_fails(monkeypatch):
 
 def test_download_recovers_from_transient_failure(monkeypatch, tmp_path):
     monkeypatch.setattr(install_models, "MODELS", tmp_path)
-    monkeypatch.setattr(install_models, "remote_sha256", lambda url: None)
+    monkeypatch.setattr(install_models, "remote_sha256",
+                        lambda url, user_agent=install_models.USER_AGENT: None)
     sleeps: list[float] = []
     monkeypatch.setattr(install_models.time, "sleep", sleeps.append)
     opens: list[str] = []
 
-    def fake_open(url, method, timeout):
+    def fake_open(url, method, timeout, user_agent=install_models.USER_AGENT):
         opens.append(method)
         if len(opens) == 1:
             raise urllib.error.URLError(ConnectionResetError("reset by peer"))
@@ -198,16 +199,17 @@ def test_download_recovers_from_transient_failure(monkeypatch, tmp_path):
 
 def test_download_does_not_retry_tls_guidance(monkeypatch, tmp_path):
     monkeypatch.setattr(install_models, "MODELS", tmp_path)
-    monkeypatch.setattr(install_models, "remote_sha256", lambda url: None)
+    monkeypatch.setattr(install_models, "remote_sha256",
+                        lambda url, user_agent=install_models.USER_AGENT: None)
     monkeypatch.setattr(install_models.time, "sleep", lambda seconds: None)
     opens: list[str] = []
     native_calls: list[str] = []
 
-    def fake_open(url, method, timeout):
+    def fake_open(url, method, timeout, user_agent=install_models.USER_AGENT):
         opens.append(method)
         raise RuntimeError("TLS certificate verification failed for every trust source")
 
-    def fake_native(url, dest):
+    def fake_native(url, dest, user_agent=install_models.USER_AGENT):
         native_calls.append(url)
         raise RuntimeError("system-native downloaders ... were also tried and failed")
 
@@ -258,13 +260,14 @@ def test_download_survives_when_only_native_downloader_works(monkeypatch, tmp_pa
     antivirus), but the OS's own TLS engine accepts it; the download then
     completes through the native transport and still checksum-verifies."""
     monkeypatch.setattr(install_models, "MODELS", tmp_path)
-    monkeypatch.setattr(install_models, "remote_sha256", lambda url: None)
+    monkeypatch.setattr(install_models, "remote_sha256",
+                        lambda url, user_agent=install_models.USER_AGENT: None)
     native_calls: list[tuple[str, Path]] = []
 
-    def rejected(url, method, timeout):
+    def rejected(url, method, timeout, user_agent=install_models.USER_AGENT):
         raise RuntimeError("TLS certificate verification failed for every trust source")
 
-    def fake_native(url, dest):
+    def fake_native(url, dest, user_agent=install_models.USER_AGENT):
         native_calls.append((url, dest))
         dest.write_bytes(b"native-transport-payload")
 
@@ -283,15 +286,16 @@ def test_download_survives_when_only_native_downloader_works(monkeypatch, tmp_pa
 def test_remote_sha256_verifies_via_native_head_when_python_tls_fails(monkeypatch):
     digest = "ab" * 32
 
-    def rejected(url, method, timeout):
+    def rejected(url, method, timeout, user_agent=install_models.USER_AGENT):
         raise RuntimeError("TLS certificate verification failed")
 
     monkeypatch.setattr(install_models, "_open_https", rejected)
     monkeypatch.setattr(install_models, "_native_head",
-                        lambda url: {"x-linked-etag": f'"sha256:{digest}"'})
+                        lambda url, user_agent=None: {"x-linked-etag": f'"sha256:{digest}"'})
     assert install_models.remote_sha256("https://example.com/m.onnx") == digest
 
-    monkeypatch.setattr(install_models, "_native_head", lambda url: {})
+    monkeypatch.setattr(install_models, "_native_head",
+                        lambda url, user_agent=None: {})
     assert install_models.remote_sha256("https://example.com/m.onnx") is None
 
 

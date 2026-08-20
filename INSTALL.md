@@ -299,7 +299,7 @@ This means security software (Kaspersky, ESET, Avast, Bitdefender, ...) or a cor
 3. the bundled CA bundle, and
 4. the system-native downloader — Windows' own `curl.exe` (or PowerShell), which validate TLS with Schannel, the same engine as your browser, so they accept the re-signed chain.
 
-Because of step 4, machines behind this kind of interception usually finish setup with no manual action at all; the download stays protected because the file's SHA-256 checksum is still fetched and verified through the same native transport. If it still fails:
+Because of step 4, machines behind this kind of interception usually finish setup with no manual action at all; the download stays protected because every file's checksum is verified afterwards. If it still fails:
 
 1. Exclude `python.exe` (inside the project's `.venv\Scripts`) and `C:\Windows\System32\curl.exe` from your antivirus "HTTPS/SSL scanning" or web shield, or pause that feature, then rerun.
 2. On a company-managed PC, ask IT to permit downloads from `huggingface.co` and `github.com`.
@@ -317,6 +317,18 @@ Linux/macOS:
 ```bash
 SC_INSECURE_TLS=1 bash run.sh
 ```
+
+### `HTTP Error 403: Forbidden` while downloading voices
+
+The same antivirus/corporate filters sometimes let TLS through and then answer `huggingface.co` file requests with 403. The installer handles this automatically by trying, in order:
+
+1. `huggingface.co` (normal and browser user-agents),
+2. the `hf-mirror.com` mirror,
+3. rhasspy's official GitHub release tarballs for the two built-in voices (`en_US-lessac-medium`, `en_US-ryan-medium`).
+
+Every source must deliver bytes matching the pinned official digests recorded in `install_models.py` (LFS SHA-256 from the Hugging Face repository API for the models, git blob SHA-1 for the configs, plus the official `yolov8n.pt` checksum), so a mirror can never silently substitute content. If even GitHub is blocked, the error message lists manual download instructions — place the two files for a voice into `models/piper/` with a browser and rerun; they will be checksum-verified and accepted.
+
+The two extra UI voices (`en_GB-alba-medium`, `en_GB-alan-medium`) exist only on Hugging Face mirrors; if those hosts are filtered, setup completes with the two built-in voices and prints a warning explaining how to add the others later.
 
 ### Start over without deleting videos
 
