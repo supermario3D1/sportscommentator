@@ -292,11 +292,16 @@ Windows:
 
 ### `SSL: CERTIFICATE_VERIFY_FAILED` / `Missing Authority Key Identifier`
 
-This means security software (Kaspersky, ESET, Avast, Bitdefender, ...) or a corporate proxy is re-signing HTTPS certificates in a way Python's strict OpenSSL build refuses — even though your browser is fine. The installer automatically retries with the operating system's own certificate verifier and the bundled CA bundle, so simply rerunning `run.bat`/`run.sh` after updating (which installs the `truststore` helper) fixes most cases.
+This means security software (Kaspersky, ESET, Avast, Bitdefender, ...) or a corporate proxy is re-signing HTTPS certificates in a way Python's strict OpenSSL build refuses — even though your browser is fine. The installer already tries, in order:
 
-If it still fails:
+1. Python's default certificates,
+2. the operating system's own certificate verifier (`truststore`),
+3. the bundled CA bundle, and
+4. the system-native downloader — Windows' own `curl.exe` (or PowerShell), which validate TLS with Schannel, the same engine as your browser, so they accept the re-signed chain.
 
-1. Exclude `python.exe` (inside the project's `.venv\Scripts`) from your antivirus "HTTPS/SSL scanning" or web shield, or pause that feature, then rerun.
+Because of step 4, machines behind this kind of interception usually finish setup with no manual action at all; the download stays protected because the file's SHA-256 checksum is still fetched and verified through the same native transport. If it still fails:
+
+1. Exclude `python.exe` (inside the project's `.venv\Scripts`) and `C:\Windows\System32\curl.exe` from your antivirus "HTTPS/SSL scanning" or web shield, or pause that feature, then rerun.
 2. On a company-managed PC, ask IT to permit downloads from `huggingface.co` and `github.com`.
 3. Last resort — accept the inspected certificates for these one-time model downloads (files are still SHA-256-verified whenever a checksum is known):
 

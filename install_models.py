@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import ssl
 import subprocess
@@ -91,12 +92,19 @@ def _open_https(url: str, method: str, timeout: float):
 
     Tries each trust source in turn, but only after TLS-level failures: server
     answers (HTTP errors) and connectivity problems surface immediately. The
-    first source that works is remembered for the rest of the install.
+    first source that works is remembered for the rest of the install; if the
+    remembered source later rejects a different site's certificate, every
+    remaining source is probed again before giving up.
     """
     global _trusted_context
-    candidates = [_trusted_context] if _trusted_context else _candidate_contexts()
+    attempts: list[tuple[str, ssl.SSLContext]] = (
+        [_trusted_context] if _trusted_context else list(_candidate_contexts())
+    )
+    first_label = attempts[0][0]
+    refill_with_fresh_sources = _trusted_context is not None
     last_tls_failure: Exception | None = None
-    for label, context in candidates:
+    while attempts:
+        label, context = attempts.pop(0)
         request = urllib.request.Request(url, method=method, headers={"User-Agent": USER_AGENT})
         try:
             response = urllib.request.urlopen(request, timeout=timeout, context=context)
@@ -105,16 +113,149 @@ def _open_https(url: str, method: str, timeout: float):
         except (urllib.error.URLError, ssl.SSLError) as exc:
             reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
             if isinstance(reason, ssl.SSLError):
-                if _trusted_context is None:
-                    print(f"! TLS rejected by {label}: {reason}")
+                print(f"! TLS rejected by {label}: {reason}")
                 last_tls_failure = exc
+                if not attempts and refill_with_fresh_sources:
+                    refill_with_fresh_sources = False
+                    print("! Previously working trust source failed here; probing the remaining sources...")
+                    attempts = [candidate for candidate in _candidate_contexts()
+                                if candidate[0] != label]
                 continue
             raise
-        if _trusted_context is None and label != candidates[0][0]:
+        if label != first_label:
             print(f"✓ TLS established using {label}.")
         _trusted_context = (label, context)
         return response
     raise RuntimeError(f"{_TLS_HELP} Underlying error: {last_tls_failure}") from last_tls_failure
+
+
+class _NativeHttpError(RuntimeError):
+    """The native downloader reached the server, which refused the request."""
+
+
+def _find_curl() -> str | None:
+    """Locate curl, preferring the build Windows itself ships (Schannel TLS).
+
+    Windows' own curl.exe validates certificates exactly like the browser
+    does, so it accepts the re-signed chains of antivirus web shields that
+    strict OpenSSL builds reject. A curl earlier on PATH (for example Git's
+    OpenSSL build) may not have that property, hence the explicit lookup.
+    """
+    if os.name == "nt":
+        root = os.environ.get("SystemRoot", r"C:\Windows")
+        for candidate in (Path(root) / "System32" / "curl.exe",
+                          Path(root) / "Sysnative" / "curl.exe"):
+            if candidate.is_file():
+                return str(candidate)
+    return shutil.which("curl")
+
+
+def _curl_download(url: str, dest: Path) -> None:
+    executable = _find_curl()
+    if not executable:
+        raise RuntimeError("curl was not found")
+    command = [executable, "-L", "--fail", "-S", "--progress-bar",
+               "--retry", "3", "--retry-delay", "5",
+               "--connect-timeout", "20", "--speed-time", "60", "--speed-limit", "1024",
+               "-A", USER_AGENT, "-o", str(dest), url]
+    if os.name == "nt":
+        # Intercepting proxies carry no revocation information for the very
+        # certificates they issue; Schannel's revocation check would trip
+        # over that before the chain itself is even evaluated.
+        command.append("--ssl-no-revoke")
+    result = subprocess.run(command, stdin=subprocess.DEVNULL)
+    if result.returncode == 22:
+        raise _NativeHttpError(f"the server rejected the download (curl exit code 22)")
+    if result.returncode != 0:
+        raise RuntimeError(f"curl exited with code {result.returncode}")
+    if not dest.is_file() or dest.stat().st_size == 0:
+        raise RuntimeError("curl finished without writing any data")
+
+
+def _powershell_download(url: str, dest: Path) -> None:
+    """Download through PowerShell's WebClient (Schannel TLS on Windows)."""
+    executable = shutil.which("powershell") or shutil.which("pwsh")
+    if not executable:
+        raise RuntimeError("PowerShell was not found")
+
+    def quote(value: str) -> str:  # escape for a single-quoted PowerShell string
+        return value.replace("'", "''")
+
+    script = ("$ErrorActionPreference='Stop';"
+              "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;"
+              "$client=New-Object System.Net.WebClient;"
+              f"$client.Headers.Add('User-Agent','{USER_AGENT}');"
+              f"$client.DownloadFile('{quote(url)}','{quote(str(dest))}')")
+    result = subprocess.run(
+        [executable, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+        capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    if result.returncode != 0:
+        details = (result.stderr or "").strip().splitlines()
+        reason = details[-1] if details else f"exit code {result.returncode}"
+        raise RuntimeError(f"PowerShell download failed: {reason}")
+    if not dest.is_file() or dest.stat().st_size == 0:
+        raise RuntimeError("PowerShell finished without writing any data")
+
+
+def _native_download(url: str, dest: Path) -> None:
+    """Last-resort download through the operating system's own TLS engine.
+
+    Security software and corporate proxies re-sign certificates in ways
+    strict OpenSSL refuses even when the operating system itself trusts
+    them. Windows' bundled curl and PowerShell both validate with Schannel
+    -- the browser's TLS engine -- instead of OpenSSL, so they still see the
+    original trust decision. Whichever transport wins, the caller verifies
+    the downloaded bytes against the SHA-256 checksum afterwards.
+    """
+    failures: list[str] = []
+    for label, fetch in (("curl", _curl_download), ("PowerShell", _powershell_download)):
+        try:
+            fetch(url, dest)
+        except _NativeHttpError:
+            dest.unlink(missing_ok=True)
+            raise  # the server itself refused; switching transport cannot help
+        except Exception as exc:
+            dest.unlink(missing_ok=True)
+            failures.append(f"{label}: {exc}")
+            continue
+        print(f"✓ Downloaded with the system-native {label} downloader.")
+        return
+    summary = "; ".join(failures)
+    raise RuntimeError(
+        f"{_TLS_HELP} The system-native downloaders (curl and PowerShell, which "
+        f"use the operating system's own TLS engine instead of OpenSSL) were "
+        f"also tried and failed ({summary})."
+    )
+
+
+def _parse_header_blocks(raw: str) -> dict[str, str]:
+    """Collapse 'curl -I' output (one header block per redirect hop) to a dict."""
+    headers: dict[str, str] = {}
+    for block in re.split(r"\r?\n\s*\r?\n", raw):
+        for line in block.splitlines():
+            name, separator, value = line.partition(":")
+            if separator and not name.startswith("HTTP/"):
+                headers.setdefault(name.strip().lower(), value.strip())
+    return headers
+
+
+def _native_head(url: str) -> dict[str, str]:
+    """Best-effort HEAD through the system curl; empty when unavailable."""
+    executable = _find_curl()
+    if not executable:
+        return {}
+    command = [executable, "-sS", "--fail", "-L", "-I", "--connect-timeout", "20",
+               "--max-time", "60", "-A", USER_AGENT, url]
+    if os.name == "nt":
+        command.append("--ssl-no-revoke")
+    try:
+        result = subprocess.run(command, capture_output=True, text=True,
+                                timeout=90, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    if result.returncode != 0:
+        return {}
+    return _parse_header_blocks(result.stdout)
 
 
 def sha256(path: Path) -> str:
@@ -130,13 +271,41 @@ def remote_sha256(url: str) -> str | None:
     try:
         with _open_https(url, "HEAD", 30) as response:
             values = [response.headers.get("x-linked-etag"), response.headers.get("etag")]
-        for value in values:
-            cleaned = (value or "").strip('"').replace("sha256:", "")
-            if len(cleaned) == 64 and all(char in "0123456789abcdefABCDEF" for char in cleaned):
-                return cleaned.lower()
     except (OSError, RuntimeError, urllib.error.URLError):
-        pass
+        # Python cannot establish TLS with this host at all; ask the system
+        # curl (Schannel on Windows) for the same headers so the download
+        # below is still checksum-verified end to end.
+        native = _native_head(url)
+        values = [native.get("x-linked-etag"), native.get("etag")]
+    for value in values:
+        cleaned = (value or "").strip('"').replace("sha256:", "")
+        if len(cleaned) == 64 and all(char in "0123456789abcdefABCDEF" for char in cleaned):
+            return cleaned.lower()
     return None
+
+
+def _stream_to_file(url: str, dest: Path) -> None:
+    """Fetch a URL into dest: Python first, the system downloader as backup."""
+    try:
+        with _open_https(url, "GET", 120) as response, dest.open("wb") as output:
+            total = int(response.headers.get("Content-Length", 0))
+            received = 0; last = -1
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                output.write(chunk); received += len(chunk)
+                percent = int(received * 100 / total) if total else 0
+                if percent >= last + 5:
+                    print(f"  {received / 1024**2:7.1f} MiB" + (f" / {total / 1024**2:.1f} MiB ({percent}%)" if total else ""))
+                    last = percent
+        return
+    except RuntimeError:
+        # Every Python trust source refused this site's certificate chain.
+        print("! Python cannot verify this site's TLS certificate; switching to the")
+        print("  system-native downloader. Downloaded bytes are still SHA-256 checked.")
+    dest.unlink(missing_ok=True)
+    _native_download(url, dest)
 
 
 def download(url: str, target: Path, known: dict[str, str]) -> str:
@@ -153,18 +322,7 @@ def download(url: str, target: Path, known: dict[str, str]) -> str:
     print(f"↓ Downloading {target.name}")
     for attempt in range(3):
         try:
-            with _open_https(url, "GET", 120) as response, partial.open("wb") as output:
-                total = int(response.headers.get("Content-Length", 0))
-                received = 0; last = -1
-                while True:
-                    chunk = response.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    output.write(chunk); received += len(chunk)
-                    percent = int(received * 100 / total) if total else 0
-                    if percent >= last + 5:
-                        print(f"  {received / 1024**2:7.1f} MiB" + (f" / {total / 1024**2:.1f} MiB ({percent}%)" if total else ""))
-                        last = percent
+            _stream_to_file(url, partial)
             partial.replace(target)
             break
         except RuntimeError:
