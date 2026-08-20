@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import shutil
+import ssl
 import subprocess
 import sys
 import time
@@ -20,6 +21,7 @@ ROOT = Path(__file__).resolve().parent
 MODELS = ROOT / "models"
 PIPER = MODELS / "piper"
 CHECKSUMS = MODELS / "checksums.json"
+USER_AGENT = "sports-commentator/1.0"
 YOLO_PT_URL = "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8n.pt"
 PIPER_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
 VOICES = {
@@ -29,6 +31,90 @@ VOICES = {
     "en_GB-alan-medium": "en/en_GB/alan/medium/en_GB-alan-medium",
 }
 OPENVOICE_URL = "https://myshell-public-repo-host.s3.amazonaws.com/openvoice/checkpoints_v2_0417.zip"
+
+_TLS_HELP = (
+    "TLS certificate verification failed for every available trust source "
+    "(Python defaults, the operating-system store, and the bundled CA bundle). "
+    "This is almost always caused by antivirus 'HTTPS/SSL scanning' (Kaspersky, "
+    "ESET, Avast, Bitdefender, ...) or a corporate proxy re-signing certificates "
+    "in a way strict OpenSSL builds reject. Fixes, in order of preference: "
+    "1) exclude python.exe from antivirus web/SSL scanning or pause that feature, "
+    "then rerun; 2) on a company-managed PC ask IT to permit downloads from "
+    "huggingface.co and github.com; 3) last resort, accept the intercepted "
+    "certificates by rerunning with SC_INSECURE_TLS=1 in the environment "
+    "(downloads remain SHA-256-verified whenever a checksum is known)."
+)
+_trusted_context: tuple[str, ssl.SSLContext] | None = None
+
+
+def _candidate_contexts() -> list[tuple[str, ssl.SSLContext]]:
+    """TLS trust sources to try, most standard first.
+
+    Interception software (antivirus web shields, corporate proxies) often
+    presents re-signed certificate chains that strict OpenSSL refuses even
+    though the operating system itself trusts them, and some Python installs
+    ship without usable default CA paths. Extra sources are optional: each is
+    used only when importable.
+    """
+    candidates: list[tuple[str, ssl.SSLContext]] = [
+        ("Python default certificates", ssl.create_default_context())
+    ]
+    try:
+        import truststore
+
+        candidates.append(
+            ("operating-system certificates (truststore)",
+             truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT))
+        )
+    except Exception:
+        pass
+    try:
+        import certifi
+
+        candidates.append(
+            ("bundled certifi certificates",
+             ssl.create_default_context(cafile=certifi.where()))
+        )
+    except Exception:
+        pass
+    if os.environ.get("SC_INSECURE_TLS") == "1":
+        print("! SC_INSECURE_TLS=1 set: certificate checks are DISABLED for model downloads.")
+        unverified = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        unverified.check_hostname = False
+        unverified.verify_mode = ssl.CERT_NONE
+        candidates.append(("unverified TLS (SC_INSECURE_TLS=1)", unverified))
+    return candidates
+
+
+def _open_https(url: str, method: str, timeout: float):
+    """urlopen that survives strict-OpenSSL vs. intercepted-certificate conflicts.
+
+    Tries each trust source in turn, but only after TLS-level failures: server
+    answers (HTTP errors) and connectivity problems surface immediately. The
+    first source that works is remembered for the rest of the install.
+    """
+    global _trusted_context
+    candidates = [_trusted_context] if _trusted_context else _candidate_contexts()
+    last_tls_failure: Exception | None = None
+    for label, context in candidates:
+        request = urllib.request.Request(url, method=method, headers={"User-Agent": USER_AGENT})
+        try:
+            response = urllib.request.urlopen(request, timeout=timeout, context=context)
+        except urllib.error.HTTPError:
+            raise  # The server answered, so certificate trust already succeeded.
+        except (urllib.error.URLError, ssl.SSLError) as exc:
+            reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+            if isinstance(reason, ssl.SSLError):
+                if _trusted_context is None:
+                    print(f"! TLS rejected by {label}: {reason}")
+                last_tls_failure = exc
+                continue
+            raise
+        if _trusted_context is None and label != candidates[0][0]:
+            print(f"✓ TLS established using {label}.")
+        _trusted_context = (label, context)
+        return response
+    raise RuntimeError(f"{_TLS_HELP} Underlying error: {last_tls_failure}") from last_tls_failure
 
 
 def sha256(path: Path) -> str:
@@ -42,14 +128,13 @@ def sha256(path: Path) -> str:
 def remote_sha256(url: str) -> str | None:
     """Read Hugging Face LFS's linked SHA-256 when the server provides it."""
     try:
-        request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "sports-commentator/1.0"})
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with _open_https(url, "HEAD", 30) as response:
             values = [response.headers.get("x-linked-etag"), response.headers.get("etag")]
         for value in values:
             cleaned = (value or "").strip('"').replace("sha256:", "")
             if len(cleaned) == 64 and all(char in "0123456789abcdefABCDEF" for char in cleaned):
                 return cleaned.lower()
-    except (OSError, urllib.error.URLError):
+    except (OSError, RuntimeError, urllib.error.URLError):
         pass
     return None
 
@@ -66,24 +151,33 @@ def download(url: str, target: Path, known: dict[str, str]) -> str:
         target.unlink()
     partial = target.with_suffix(target.suffix + ".part")
     print(f"↓ Downloading {target.name}")
-    request = urllib.request.Request(url, headers={"User-Agent": "sports-commentator/1.0"})
-    try:
-        with urllib.request.urlopen(request, timeout=120) as response, partial.open("wb") as output:
-            total = int(response.headers.get("Content-Length", 0))
-            received = 0; last = -1
-            while True:
-                chunk = response.read(1024 * 1024)
-                if not chunk:
-                    break
-                output.write(chunk); received += len(chunk)
-                percent = int(received * 100 / total) if total else 0
-                if percent >= last + 5:
-                    print(f"  {received / 1024**2:7.1f} MiB" + (f" / {total / 1024**2:.1f} MiB ({percent}%)" if total else ""))
-                    last = percent
-        partial.replace(target)
-    except Exception:
-        partial.unlink(missing_ok=True)
-        raise
+    for attempt in range(3):
+        try:
+            with _open_https(url, "GET", 120) as response, partial.open("wb") as output:
+                total = int(response.headers.get("Content-Length", 0))
+                received = 0; last = -1
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    output.write(chunk); received += len(chunk)
+                    percent = int(received * 100 / total) if total else 0
+                    if percent >= last + 5:
+                        print(f"  {received / 1024**2:7.1f} MiB" + (f" / {total / 1024**2:.1f} MiB ({percent}%)" if total else ""))
+                        last = percent
+            partial.replace(target)
+            break
+        except RuntimeError:
+            # TLS trust guidance already explains the fix; retrying cannot help.
+            partial.unlink(missing_ok=True)
+            raise
+        except Exception:
+            partial.unlink(missing_ok=True)
+            if attempt == 2:
+                raise
+            wait = 5 * (attempt + 1)
+            print(f"! Transfer interrupted; retrying in {wait}s (attempt {attempt + 2} of 3)...")
+            time.sleep(wait)
     actual = sha256(target)
     if expected and actual != expected:
         target.unlink(missing_ok=True)

@@ -290,6 +290,29 @@ Windows:
 .venv\Scripts\python.exe install_models.py
 ```
 
+### `SSL: CERTIFICATE_VERIFY_FAILED` / `Missing Authority Key Identifier`
+
+This means security software (Kaspersky, ESET, Avast, Bitdefender, ...) or a corporate proxy is re-signing HTTPS certificates in a way Python's strict OpenSSL build refuses — even though your browser is fine. The installer automatically retries with the operating system's own certificate verifier and the bundled CA bundle, so simply rerunning `run.bat`/`run.sh` after updating (which installs the `truststore` helper) fixes most cases.
+
+If it still fails:
+
+1. Exclude `python.exe` (inside the project's `.venv\Scripts`) from your antivirus "HTTPS/SSL scanning" or web shield, or pause that feature, then rerun.
+2. On a company-managed PC, ask IT to permit downloads from `huggingface.co` and `github.com`.
+3. Last resort — accept the inspected certificates for these one-time model downloads (files are still SHA-256-verified whenever a checksum is known):
+
+Windows:
+
+```bat
+set SC_INSECURE_TLS=1
+run.bat
+```
+
+Linux/macOS:
+
+```bash
+SC_INSECURE_TLS=1 bash run.sh
+```
+
 ### Start over without deleting videos
 
 Delete `.venv` and `models`, then launch again. Do not delete `outputs` if it contains final videos. Ollama stores its language models separately; remove them only if necessary with:
