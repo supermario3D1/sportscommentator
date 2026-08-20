@@ -26,3 +26,8 @@ gradio>=4.44,<6
 # Utilities
 psutil>=5.9,<8
 tqdm>=4.65,<5
+
+# Downloads: OS-native trust (truststore) and bundled CAs (certifi) let the
+# installer survive antivirus/corporate TLS interception that strict OpenSSL rejects
+truststore>=0.9,<1
+certifi
