@@ -7,7 +7,6 @@ import random
 import time
 import urllib.error
 import urllib.request
-from pathlib import Path
 from typing import Any
 
 from config.settings import RuntimeSettings, TEMP_DIR
