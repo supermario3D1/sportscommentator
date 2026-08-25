@@ -1,8 +1,6 @@
 """YOLOv8n ONNX inference with provider auto-selection and explicit NMS."""
 from __future__ import annotations
 
-import json
-import math
 import re
 import time
 from pathlib import Path

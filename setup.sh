@@ -95,6 +95,7 @@ echo " Setup complete"
 echo "=============================================================="
 echo "The application will start now when setup was launched by run.sh."
 echo "For later launches, run: bash run.sh"
-echo "Then open: http://localhost:7860"
+echo "It opens http://localhost:7860 automatically, or the next free"
+echo "port if something else already holds 7860."
 echo
 echo "Optional voice cloning instructions are in INSTALL.md."

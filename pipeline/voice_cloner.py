@@ -8,7 +8,7 @@ import wave
 from pathlib import Path
 from typing import Any
 
-from config.settings import MODEL_DIR, RuntimeSettings, TEMP_DIR, VOICE_MODELS
+from config.settings import MODEL_DIR, RuntimeSettings, TEMP_DIR
 from pipeline.common import (PipelinePaused, ProgressCallback, StopCheck,
                              atomic_write_json, eta_text, read_json, report,
                              stop_if_requested)
@@ -67,7 +67,9 @@ class VoiceSynthesizer:
             LOG.warning("Voice sample supplied, but OpenVoice V2 checkpoints are absent; keeping Piper voice.")
             return False
         try:
-            import torch
+            # torch is imported only to prove it is present; OpenVoice needs it
+            # and its own import error message is far less helpful.
+            import torch  # noqa: F401
             from openvoice import se_extractor
             from openvoice.api import ToneColorConverter
         except ImportError as exc:

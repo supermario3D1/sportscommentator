@@ -71,7 +71,7 @@ Select **Quality — clone uploaded sample with OpenVoice** in the UI. At 16 GB 
 
 ## Use the web UI
 
-Run `./run.sh` (`run.bat` on Windows), then open <http://localhost:7860>.
+Run `./run.sh` (`run.bat` on Windows). The interface opens in your browser at <http://localhost:7860>. If another program already holds port 7860, the app reports what holds it and starts on the next free port instead of failing; if a copy of this app is already running, it prints that URL and exits cleanly instead of starting a second one. Use `--port 0` for an OS-assigned port, `--strict-port` to insist on the exact port, and `--no-browser` to stay in the terminal.
 
 1. Upload MP4/MKV/AVI/MOV and optionally a clean WAV/MP3/FLAC voice sample.
 2. Select sport, style, built-in voice, commentary frequency, and source-audio duck level.
@@ -102,6 +102,8 @@ Useful variants:
 ./run.sh --process match.mkv --half-fps --tinyllama --key-events-only --no-review
 ./run.sh --process match.mp4 --voice-sample voice.wav --clone-voice
 ./run.sh --resume
+./run.sh --port 7900 --no-browser        # fixed alternate port, terminal only
+./run.sh --port 0                        # let the OS choose a free port
 ```
 
 If a checkpoint exists, terminal mode asks `Previous progress found. Resume from [stage]?`. On the review gate, edit `temp/commentary/commentary.json`, run `./run.sh --resume`, and approve synthesis when prompted.
@@ -176,6 +178,8 @@ The tests cover atomic JSON, track identity, and synthetic two-of-three goal log
 ## Troubleshooting
 
 - **Model missing:** run `python install_models.py`; selected voice files must exist in `models/piper/`.
+- **`Port 7860 is already in use` / `error while attempting to bind on address`:** another program — usually a previous window of this app — holds the port. Startup now names the owning process, moves to the next free port, and reuses the running copy's URL when it is this same interface, so the message is informational rather than fatal. Close the old window to get port 7860 back: on Windows `netstat -ano | findstr :7860` shows the PID and `taskkill /PID <pid> /F` ends it; on Linux `ss -ltnp | grep 7860` does the same.
+- **Missing components at startup:** the preflight list printed under the hardware summary names every absent piece (FFmpeg, YOLOv8n, the Piper voice, Ollama) before you spend an hour on a job.
 - **`SSL: CERTIFICATE_VERIFY_FAILED` during setup:** antivirus/corporate TLS interception that strict OpenSSL rejects. The installer retries with the OS certificate store and bundled CAs, then falls back to Windows' own downloader (`curl.exe`/PowerShell via Schannel) with SHA-256 verification still enforced. See the dedicated section in INSTALL.md (including the `SC_INSECURE_TLS=1` last resort).
 - **`HTTP Error 403: Forbidden` while downloading voices:** the same filters answering `huggingface.co` with refusals. The installer automatically retries with a browser user-agent, the `hf-mirror.com` mirror, and rhasspy's GitHub release tarballs for the built-in voices — every source is held to pinned official digests, and a completely blocked network yields copy-paste manual-download instructions instead of a dead end.
 - **Ollama unavailable:** start `ollama serve`. The pipeline tries the configured model, then TinyLlama, then clearly records a deterministic emergency line so an overnight export is not lost.
