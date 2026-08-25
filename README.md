@@ -55,7 +55,7 @@ source .venv/bin/activate
 python install_models.py
 ```
 
-The default installs four voices because all four appear in the UI. For only the two defaults:
+The default installs four voices because all four appear in the UI. For only the two built-in ones (both also mirrored on GitHub releases, for networks where huggingface.co is blocked):
 
 ```bash
 python install_models.py --default-voices-only
@@ -176,7 +176,8 @@ The tests cover atomic JSON, track identity, and synthetic two-of-three goal log
 ## Troubleshooting
 
 - **Model missing:** run `python install_models.py`; selected voice files must exist in `models/piper/`.
-- **`SSL: CERTIFICATE_VERIFY_FAILED` during setup:** antivirus/corporate TLS interception that strict OpenSSL rejects. The installer retries with the OS certificate store and bundled CAs; for persistent cases see the dedicated section in INSTALL.md (including the `SC_INSECURE_TLS=1` last resort).
+- **`SSL: CERTIFICATE_VERIFY_FAILED` during setup:** antivirus/corporate TLS interception that strict OpenSSL rejects. The installer retries with the OS certificate store and bundled CAs, then falls back to Windows' own downloader (`curl.exe`/PowerShell via Schannel) with SHA-256 verification still enforced. See the dedicated section in INSTALL.md (including the `SC_INSECURE_TLS=1` last resort).
+- **`HTTP Error 403: Forbidden` while downloading voices:** the same filters answering `huggingface.co` with refusals. The installer automatically retries with a browser user-agent, the `hf-mirror.com` mirror, and rhasspy's GitHub release tarballs for the built-in voices — every source is held to pinned official digests, and a completely blocked network yields copy-paste manual-download instructions instead of a dead end.
 - **Ollama unavailable:** start `ollama serve`. The pipeline tries the configured model, then TinyLlama, then clearly records a deterministic emergency line so an overnight export is not lost.
 - **CPU selected despite AMD GPU:** run `python -m config.hardware_detect`. The relevant ONNX execution provider must appear under `ONNX providers`; `vulkaninfo`/`rocminfo` alone is not enough.
 - **MP4 mux failure:** FFmpeg cannot copy every source codec into MP4. Remux/transcode the source to H.264/H.265 MP4 first; the application intentionally does not silently re-encode video.
