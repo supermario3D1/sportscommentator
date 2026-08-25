@@ -249,6 +249,30 @@ After an update, rerun `setup.sh` or `setup.bat` only if `run.sh`/`run.bat` repo
 
 Run `bash run.sh` or `run.bat` again. Python packages are reused, completed model files are checksum-verified, and only missing files are downloaded.
 
+### `Port 7860 is already in use`
+
+Another program holds the port — most often a window of this app that was never closed.
+
+The launcher handles this automatically: it names the process that owns the port, starts on the next free port, and when the port is held by this same interface it prints that URL and exits instead of starting a duplicate. So this is a notice, not a failure.
+
+To get port 7860 back, close the older window, or find and end the process:
+
+Windows:
+
+```bat
+netstat -ano | findstr :7860
+taskkill /PID 12345 /F
+```
+
+Linux:
+
+```bash
+ss -ltnp | grep 7860
+kill 12345
+```
+
+Other useful options: `run.bat --port 0` (operating-system assigned port), `run.bat --port 7900` (fixed alternate port), `run.bat --strict-port` (fail instead of moving), and `run.bat --no-browser` (do not open a browser tab).
+
 ### `No space left on device`
 
 Free at least 15–20 GB. Remove partial files ending in `.part` under `models/` only if rerunning setup does not recover.

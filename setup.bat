@@ -93,7 +93,8 @@ echo  Setup complete
 echo ==============================================================
 echo The application will start now when setup was launched by run.bat.
 echo For later launches, double-click run.bat.
-echo Then open http://localhost:7860
+echo It opens http://localhost:7860 automatically, or the next free
+echo port if something else already holds 7860.
 exit /b 0
 
 :refresh_path

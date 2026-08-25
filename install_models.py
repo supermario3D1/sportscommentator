@@ -20,6 +20,14 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent
+if str(ROOT) not in sys.path:
+    # Keep `python install_models.py` working from any working directory.
+    sys.path.insert(0, str(ROOT))
+
+# Windows consoles use cp1252 when output is redirected, which cannot encode
+# the ✓/→ characters below and would abort a multi-gigabyte install.
+from utils.console import enable_utf8_console  # noqa: E402
+
 MODELS = ROOT / "models"
 PIPER = MODELS / "piper"
 CHECKSUMS = MODELS / "checksums.json"
@@ -213,7 +221,7 @@ def _curl_download(url: str, dest: Path, user_agent: str = USER_AGENT) -> None:
         command.append("--ssl-no-revoke")
     result = subprocess.run(command, stdin=subprocess.DEVNULL)
     if result.returncode == 22:
-        raise _NativeHttpError(f"the server rejected the download (curl exit code 22)")
+        raise _NativeHttpError("the server rejected the download (curl exit code 22)")
     if result.returncode != 0:
         raise RuntimeError(f"curl exited with code {result.returncode}")
     if not dest.is_file() or dest.stat().st_size == 0:
@@ -501,9 +509,9 @@ def install_voices(known: dict[str, str], hashes: dict[str, str], all_voices: bo
             # The extra UI voices have no GitHub fallback; on a filtered
             # network they degrade to a warning instead of blocking setup.
             print(f"⚠ Optional voice '{name}' could not be installed and will be")
-            print(f"  unavailable in the voice picker. The two built-in voices are")
-            print(f"  complete. To add it later, rerun setup or place its files in")
-            print(f"  models/piper manually; they will be checksum-verified.")
+            print("  unavailable in the voice picker. The two built-in voices are")
+            print("  complete. To add it later, rerun setup or place its files in")
+            print("  models/piper manually; they will be checksum-verified.")
 
 
 def _validate_voice_pair(name: str) -> None:
@@ -669,6 +677,7 @@ def install_openvoice(known: dict[str, str], hashes: dict[str, str]) -> None:
 
 
 def main() -> int:
+    enable_utf8_console()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--skip-yolo", action="store_true")
     parser.add_argument("--skip-llm", action="store_true")
@@ -693,9 +702,18 @@ def main() -> int:
         print(f"\nAll requested models are ready. Local model files: {total / 1024**3:.2f} GiB")
         print(f"Checksums recorded in {CHECKSUMS}")
         return 0
+    except KeyboardInterrupt:
+        print("\nInterrupted. Verified downloads are retained; rerun this command to resume.",
+              file=sys.stderr)
+        return 130
     except (RuntimeError, OSError, subprocess.CalledProcessError, urllib.error.URLError) as exc:
         print(f"\nMODEL INSTALL FAILED: {exc}", file=sys.stderr)
         print("Already verified downloads are retained; rerun this command to resume.", file=sys.stderr)
+        return 1
+    except Exception as exc:  # corrupt checksum file, unexpected TLS/HTTP shape, ...
+        print(f"\nMODEL INSTALL FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
+        print("Already verified downloads are retained; rerun this command to resume.", file=sys.stderr)
+        print("If this keeps happening, open an issue with the two lines above.", file=sys.stderr)
         return 1
 
 

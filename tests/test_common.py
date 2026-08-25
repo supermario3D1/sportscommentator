@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 from pipeline.common import atomic_write_json, eta_text, read_json

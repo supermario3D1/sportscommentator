@@ -127,7 +127,6 @@ def test_existing_pinned_file_is_reused_or_replaced(monkeypatch, tmp_path):
 
 
 def test_user_agent_reaches_the_request(monkeypatch, tmp_path):
-    seen: list[tuple[str, str]] = []
     request_headers: dict[str, str] = {}
 
     def fake_urlopen(request, timeout, context):
@@ -164,7 +163,6 @@ def test_install_voice_moves_to_next_mirror_on_403(monkeypatch, tmp_path):
         calls.append(url)
         if "blocked.example" in url:
             raise urllib.error.HTTPError(url, 403, "Forbidden", {}, None)
-        stem = str(target.name).removesuffix(".json")
         body = model if target.name.endswith(".onnx") else config
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(body)

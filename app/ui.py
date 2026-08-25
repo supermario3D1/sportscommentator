@@ -192,7 +192,9 @@ def create_ui(settings: RuntimeSettings):
     try:
         import gradio as gr
     except ImportError as exc:
-        raise RuntimeError("Gradio is not installed. Run setup.sh first.") from exc
+        raise RuntimeError(
+            "Gradio is not installed. Run setup.bat (Windows) or bash setup.sh (Linux) first."
+        ) from exc
 
     controller = UIController(settings)
     prior = controller.manager.resumable_summary()

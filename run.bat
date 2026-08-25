@@ -1,5 +1,6 @@
 @echo off
 setlocal EnableExtensions
+title AI Sports Commentator
 cd /d "%~dp0"
 
 if not exist .venv\Scripts\python.exe goto :first_setup
@@ -20,6 +21,12 @@ if errorlevel 1 (
 )
 
 :launch
+if not exist .venv\Scripts\python.exe (
+  echo.
+  echo The Python environment in .venv is missing. Delete the .venv folder and run run.bat again.
+  pause
+  exit /b 1
+)
 .venv\Scripts\python.exe -m app.main %*
 if errorlevel 1 (
   echo.

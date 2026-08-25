@@ -14,6 +14,7 @@ import http.server
 import os
 import shutil
 import ssl
+from pathlib import Path
 import subprocess
 import threading
 import urllib.error
